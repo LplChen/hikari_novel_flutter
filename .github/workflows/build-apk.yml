@@ -1,0 +1,70 @@
+name: 编译 Hikari Novel APK
+
+on:
+  workflow_dispatch: # 保留手动触发按钮
+    inputs:
+      version:
+        description: '发布版本号 (例如 v1.0.0，不填则默认使用构建编号)'
+        required: false
+        type: string
+
+env:
+  # 提前启用 Node.js 24 环境，消除 Node 20 弃用警告
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true 
+
+jobs:
+  build:
+    runs-on: ubuntu-latest # 编译安卓 APK 使用 Linux 环境即可
+    
+    # 必须赋予写入权限，才能创建 Release
+    permissions:
+      contents: write 
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu' # Flutter 官方推荐的 Java 发行版
+          java-version: '17'   # 较新的 Android 编译工具链通常需要 Java 17
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.7'  # 严格对齐作者的 Flutter 版本
+          channel: 'stable'          # 对应作者的 stable 分支
+
+      - name: 获取依赖包 (Pub Get)
+        run: flutter pub get
+
+      - name: 编译 Release APK (ARM64 + Obfuscation)
+        # 指定 arm64 架构，开启混淆，并把调试信息分离到 build/app/outputs/symbols 文件夹
+        run: flutter build apk --release --target-platform android-arm64 --obfuscate --split-debug-info=build/app/outputs/symbols
+
+      - name: Rename APK (重命名安装包)
+        run: |
+          # 获取你输入的版本号
+          VERSION="${{ inputs.version }}"
+          # 如果没有输入，就使用 build-序号 (例如 build-5)
+          if [ -z "$VERSION" ]; then
+            VERSION="build-${{ github.run_number }}"
+          fi
+          # 执行重命名，拼接出类似 Hikari_Novel_arm64_v1.0.0.apk 的名字
+          mv build/app/outputs/flutter-apk/app-release.apk "build/app/outputs/flutter-apk/Hikari_Novel_arm64_${VERSION}.apk"
+
+      - name: Zip Debug Symbols (打包符号表)
+        run: zip -r debug-symbols.zip build/app/outputs/symbols
+
+      - name: Publish to GitHub Releases (发布到 Releases)
+        uses: softprops/action-gh-release@v2
+        with:
+          # 如果你输入了版本号就用你的，没输入就用 build-1, build-2 这样的序号
+          tag_name: "${{ inputs.version || format('build-{0}', github.run_number) }}"
+          name: "${{ inputs.version || format('Build #{0}', github.run_number) }}"
+          body: "这是通过 GitHub Actions 自动构建的 ARM64 优化版 APK。"
+          # 使用通配符 * 来匹配刚刚重命名好的 APK 文件
+          files: |
+            build/app/outputs/flutter-apk/Hikari_Novel_arm64_*.apk
+            debug-symbols.zip
