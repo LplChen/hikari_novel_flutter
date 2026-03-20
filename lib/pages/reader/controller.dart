@@ -26,6 +26,7 @@ import '../../models/page_state.dart';
 import '../../network/api.dart';
 import '../../service/db_service.dart';
 import '../../service/local_storage_service.dart';
+import 'widgets/paper_curl_pager.dart';
 
 class ReaderController extends GetxController {
   final _novelDetailController = Get.find<NovelDetailController>();
@@ -42,6 +43,7 @@ class ReaderController extends GetxController {
   int get currentVolumeTotal => catalogue.length;
 
   final pageController = PageController();
+  final paperCurlController = PaperCurlPagerController();
 
   final _battery = Battery();
   RxInt batteryLevel = 0.obs;
@@ -239,6 +241,10 @@ class ReaderController extends GetxController {
 
   /// 跳转页数
   void jumpToPage(int page) {
+    if (readerSettingsState.value.direction != ReaderDirection.upToDown && !isDualPage && readerSettingsState.value.pageTurningAnimation) {
+      paperCurlController.jumpToPage(page);
+      return;
+    }
     readerSettingsState.value.pageTurningAnimation
         ? pageController.animateToPage(page, duration: const Duration(milliseconds: 200), curve: Curves.linear)
         : pageController.jumpToPage(page);
