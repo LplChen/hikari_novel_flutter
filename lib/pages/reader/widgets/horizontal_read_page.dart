@@ -16,6 +16,8 @@ class HorizontalReadPage extends StatefulWidget {
   final bool isDualPage;
   final double dualPageSpacing;
   final bool pageTurningAnimation;
+  final int paraSpacing;
+  final int paraIndent;
   final PaperCurlPagerController? paperCurlController;
   final Widget? pageFooter;
   final Color? backgroundColor;
@@ -39,6 +41,8 @@ class HorizontalReadPage extends StatefulWidget {
     required this.isDualPage,
     required this.dualPageSpacing,
     this.pageTurningAnimation = false,
+    required this.paraSpacing,
+    required this.paraIndent,
     this.paperCurlController,
     this.pageFooter,
     this.backgroundColor,
@@ -365,7 +369,7 @@ class _HorizontalReadPageState extends State<HorizontalReadPage> with WidgetsBin
       child: SizedBox(
         height: pageHeight,
         child: CustomPaint(
-          painter: NovelTextPainter((pages[index] as TextPage).texts, style: widget.style, fontHeight: fontHeight),
+          painter: NovelTextPainter((pages[index] as TextPage).rows, style: widget.style, fontHeight: fontHeight, paragraphSpacing: widget.paraSpacing.toDouble()),
         ),
       ),
     );
@@ -378,7 +382,7 @@ class _HorizontalReadPageState extends State<HorizontalReadPage> with WidgetsBin
           height: pageHeight,
           width: constraints.maxWidth,
           child: CustomPaint(
-            painter: NovelTextPainter((pages[index] as TextPage).texts, style: widget.style, fontHeight: fontHeight),
+            painter: NovelTextPainter((pages[index] as TextPage).rows, style: widget.style, fontHeight: fontHeight, paragraphSpacing: widget.paraSpacing.toDouble()),
           ),
         );
       },
@@ -424,11 +428,15 @@ class _HorizontalReadPageState extends State<HorizontalReadPage> with WidgetsBin
         fontSize: fontSize,
         width: pageWidth,
         maxLine: maxLine,
+        pageHeight: pageHeight,
         lineHeight: lineHeight,
+        paraSpacing: widget.paraSpacing.toDouble(),
+        paraIndent: widget.paraIndent,
         chineseWidth: chineseCharSize.width,
         englishWidth: englishCharSize.width,
         symbolWidth: symbolCharSize.width,
         spaceWidth: spaceCharSize.width,
+        fontHeight: fontHeight,
       ),
     );
 
@@ -448,92 +456,118 @@ class _HorizontalReadPageState extends State<HorizontalReadPage> with WidgetsBin
   }
 
   static List<Page> splitText(ComputeParameter parameter) {
-    var str = parameter.rawText;
-    var img = parameter.rawImage;
+    final str = parameter.rawText;
+    final img = parameter.rawImage;
 
-    List<Page> pages = [];
+    final List<Page> pages = [];
 
     if (str.isNotEmpty) {
-      //定义正则表达式（匹配中文字符、英文单词、符号、全角符号、数字串）
-      //RegExp reg = RegExp(r"([\u4e00-\u9fa5]|\b\w+\b|\x20|　|\S|\p{Han}|\n)");
-      RegExp reg = RegExp(r"([^\x00-\xff]|\b\w+\b|\p{P}|\x20|\S|\u3000|\n)");
-
-      //使用正则表达式分割字符串
-      List<String> resultList = reg.allMatches(str).map((match) => match.group(0) ?? "").toList();
-
-      List<CharInfo> chars = [];
+      final reg = RegExp(r"([^\x00-\xff]|\b\w+\b|\p{P}|\x20|\S|\u3000|\n)");
       final chineseExp = RegExp(r"[^\x00-\xff]");
       final wordExp = RegExp(r"\w+");
       final symbolExp = RegExp(r"\p{P}");
       final newLineExp = RegExp(r"\n");
 
-      for (var item in resultList) {
-        if (chineseExp.hasMatch(item)) {
-          chars.add(CharInfo(text: item, width: parameter.chineseWidth, type: CharType.chinese));
-          continue;
+      final paragraphs = str.replaceAll('\r\n', '\n').split(RegExp(r'\n\s*\n+')).where((e) => e.trim().isNotEmpty).toList();
+      final indentPrefix = parameter.paraIndent > 0 ? List.filled(parameter.paraIndent, '　').join() : '';
+      final List<TextRow> allRows = [];
+
+      void flushWrappedLine(String line, {required bool paragraphEnd, required bool isFirstLineOfParagraph}) {
+        final source = isFirstLineOfParagraph ? '$indentPrefix${line.trimLeft()}' : line;
+        if (source.isEmpty) {
+          allRows.add(TextRow('', paragraphEnd: paragraphEnd));
+          return;
         }
-        if (wordExp.hasMatch(item)) {
-          chars.add(CharInfo(text: item, width: parameter.englishWidth * item.length, type: CharType.word));
-          continue;
+
+        final lineMatches = reg.allMatches(source).map((match) => match.group(0) ?? '').toList();
+        String rowText = '';
+        double currentRowWidth = 0;
+
+        for (final item in lineMatches) {
+          final charInfo = charsFromToken(item, parameter, chineseExp, wordExp, symbolExp, newLineExp);
+          if ((currentRowWidth + charInfo.width) > parameter.width && rowText.isNotEmpty) {
+            allRows.add(TextRow(rowText, paragraphEnd: false));
+            rowText = '';
+            currentRowWidth = 0;
+          }
+          rowText += charInfo.text;
+          currentRowWidth += charInfo.width;
         }
-        if (newLineExp.hasMatch(item)) {
-          chars.add(CharInfo(text: "", width: 0, type: CharType.newline));
-          continue;
-        }
-        if (item == " ") {
-          chars.add(CharInfo(text: item, width: parameter.spaceWidth, type: CharType.symbol));
-          continue;
-        }
-        if (symbolExp.hasMatch(item)) {
-          chars.add(CharInfo(text: item, width: parameter.symbolWidth, type: CharType.symbol));
-          continue;
-        }
-        chars.add(CharInfo(text: item, width: parameter.symbolWidth, type: CharType.symbol));
+
+        allRows.add(TextRow(rowText, paragraphEnd: paragraphEnd));
       }
 
-      List<String> currentTextPage = [];
-      String rowText = "";
-      double currentRowWidth = 0;
+      for (final paragraph in paragraphs) {
+        final lines = paragraph.split('\n');
+        for (int i = 0; i < lines.length; i++) {
+          flushWrappedLine(
+            lines[i],
+            paragraphEnd: i == lines.length - 1,
+            isFirstLineOfParagraph: i == 0,
+          );
+        }
+      }
 
-      for (var item in chars) {
-        //是否超出了最大行数
-        if (currentTextPage.length >= parameter.maxLine) {
+      List<TextRow> currentTextPage = [];
+      double currentPageHeight = 0;
+      final pageLimit = parameter.pageHeight > 0 ? parameter.pageHeight : (parameter.maxLine * parameter.fontHeight);
+
+      for (final row in allRows) {
+        final rowHeight = parameter.fontHeight + (row.paragraphEnd ? parameter.paraSpacing : 0);
+        if (currentTextPage.isNotEmpty && (currentPageHeight + rowHeight) > pageLimit) {
           pages.add(TextPage(pages.length, currentTextPage));
           currentTextPage = [];
+          currentPageHeight = 0;
         }
-        //新行
-        if (item.type == CharType.newline) {
-          currentTextPage.add(rowText);
-          rowText = "";
-          currentRowWidth = 0;
-          continue;
-        }
-        //是否超出了最大宽度
-        if ((currentRowWidth + item.width) > parameter.width) {
-          currentTextPage.add(rowText);
-          rowText = "";
-          currentRowWidth = 0;
-        }
-        rowText += item.text;
-        currentRowWidth += item.width;
+        currentTextPage.add(row);
+        currentPageHeight += rowHeight;
       }
 
-      currentTextPage.add(rowText);
-      pages.add(TextPage(pages.length, currentTextPage));
-      final first = pages.first as TextPage;
-      if (pages.length == 1 && first.texts.length == 1 && first.texts.first.isEmpty) {
-        return [];
+      if (currentTextPage.isNotEmpty) {
+        pages.add(TextPage(pages.length, currentTextPage));
+      }
+
+      if (pages.length == 1) {
+        final first = pages.first as TextPage;
+        if (first.rows.length == 1 && first.rows.first.text.isEmpty) {
+          return [];
+        }
       }
     }
 
-    //添加图片
     if (img.isNotEmpty) {
-      for (var i in img) {
+      for (final i in img) {
         pages.add(ImagePage(pages.length, i));
       }
     }
 
     return pages;
+  }
+
+  static CharInfo charsFromToken(
+    String item,
+    ComputeParameter parameter,
+    RegExp chineseExp,
+    RegExp wordExp,
+    RegExp symbolExp,
+    RegExp newLineExp,
+  ) {
+    if (chineseExp.hasMatch(item)) {
+      return CharInfo(text: item, width: parameter.chineseWidth, type: CharType.chinese);
+    }
+    if (wordExp.hasMatch(item)) {
+      return CharInfo(text: item, width: parameter.englishWidth * item.length, type: CharType.word);
+    }
+    if (newLineExp.hasMatch(item)) {
+      return CharInfo(text: '', width: 0, type: CharType.newline);
+    }
+    if (item == ' ') {
+      return CharInfo(text: item, width: parameter.spaceWidth, type: CharType.symbol);
+    }
+    if (symbolExp.hasMatch(item)) {
+      return CharInfo(text: item, width: parameter.symbolWidth, type: CharType.symbol);
+    }
+    return CharInfo(text: item, width: parameter.symbolWidth, type: CharType.symbol);
   }
 
   Size calcFontSize(String text, {required double fontSize, required double lineHeight}) {
@@ -570,6 +604,8 @@ class _HorizontalReadPageState extends State<HorizontalReadPage> with WidgetsBin
       p.right,
       p.top,
       p.bottom,
+      widget.paraIndent,
+      widget.paraSpacing,
     ].join("|");
   }
 
@@ -615,11 +651,15 @@ class ComputeParameter {
   double width;
   double fontSize;
   double lineHeight;
+  double pageHeight;
+  double paraSpacing;
+  int paraIndent;
   int maxLine;
   double chineseWidth;
   double englishWidth;
   double symbolWidth;
   double spaceWidth;
+  double fontHeight;
 
   ComputeParameter({
     required this.rawText,
@@ -627,40 +667,44 @@ class ComputeParameter {
     required this.fontSize,
     required this.width,
     required this.maxLine,
+    required this.pageHeight,
     required this.lineHeight,
+    required this.paraSpacing,
+    required this.paraIndent,
     required this.chineseWidth,
     required this.englishWidth,
     required this.symbolWidth,
     required this.spaceWidth,
+    required this.fontHeight,
   });
 }
 
 class NovelTextPainter extends CustomPainter {
   final TextStyle style;
   final double fontHeight;
-  final List<String> text;
+  final double paragraphSpacing;
+  final List<TextRow> rows;
 
-  NovelTextPainter(this.text, {required this.style, required this.fontHeight});
+  NovelTextPainter(this.rows, {required this.style, required this.fontHeight, required this.paragraphSpacing});
 
   @override
   void paint(Canvas canvas, Size size) {
-    var i = 0;
-    for (var item in text) {
-      TextSpan textSpan = TextSpan(text: item, style: style);
-
+    double y = 0;
+    for (final row in rows) {
+      final textSpan = TextSpan(text: row.text, style: style);
       final textPainter = TextPainter(text: textSpan, maxLines: 1, textAlign: TextAlign.justify, textDirection: TextDirection.ltr);
       textPainter.layout(maxWidth: size.width);
-
-      final offset = Offset(0, i * fontHeight);
-      textPainter.paint(canvas, offset);
-
-      i++;
+      textPainter.paint(canvas, Offset(0, y));
+      y += fontHeight;
+      if (row.paragraphEnd) {
+        y += paragraphSpacing;
+      }
     }
   }
 
   @override
   bool shouldRepaint(covariant NovelTextPainter oldDelegate) {
-    return oldDelegate.style != style || oldDelegate.text != text || oldDelegate.fontHeight != fontHeight;
+    return oldDelegate.style != style || oldDelegate.rows != rows || oldDelegate.fontHeight != fontHeight || oldDelegate.paragraphSpacing != paragraphSpacing;
   }
 }
 
@@ -671,9 +715,16 @@ abstract class Page {
 }
 
 class TextPage extends Page {
-  final List<String> texts;
+  final List<TextRow> rows;
 
-  TextPage(super.index, this.texts);
+  TextPage(super.index, this.rows);
+}
+
+class TextRow {
+  final String text;
+  final bool paragraphEnd;
+
+  const TextRow(this.text, {this.paragraphEnd = false});
 }
 
 class ImagePage extends Page {

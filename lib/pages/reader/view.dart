@@ -262,6 +262,8 @@ class ReaderPage extends StatelessWidget {
       dualPageSpacing: controller.readerSettingsState.value.dualPageSpacing,
       controller: controller.pageController,
       pageTurningAnimation: controller.readerSettingsState.value.pageTurningAnimation,
+      paraSpacing: controller.readerSettingsState.value.readerParaSpacing,
+      paraIndent: controller.readerSettingsState.value.readerParaIndent,
       paperCurlController: controller.paperCurlController,
       backgroundColor: controller.currentBgColor.value ?? Theme.of(context).colorScheme.surface,
       backsideColor: Color.lerp(
