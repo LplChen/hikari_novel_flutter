@@ -289,10 +289,14 @@ class AppTranslations extends Translations {
       "copy_all": "复制全部",
       "free_copy": "自由复制",
       "cloudflare_403_exception_tip": "你的IP已被Cloudflare拒绝访问，请使用其他IP进行访问",
+      "open_source_license": "开源许可",
+      "para_indent": "首行缩进",
+      "para_spacing": "段距",
+      "bottomStatusBarHorizontalSpacing": "底部状态栏文字边距",
     },
 
     "zh_TW": {
-      "exit_app_tip": "再按一次退出 App",
+      "exit_app_tip": "再按一次退出App",
       "home": "首頁",
       "bookshelf": "書架",
       "history": "歷史",
@@ -577,6 +581,10 @@ class AppTranslations extends Translations {
       "copy_all": "複製全部",
       "free_copy": "自由複製",
       "cloudflare_403_exception_tip": "你的IP已被Cloudflare拒絕訪問，請使用其他IP進行訪問",
+      "open_source_license": "開源許可",
+      "para_indent": "首行縮進",
+      "para_spacing": "段距",
+      "bottomStatusBarHorizontalSpacing": "底部狀態欄文字邊距",
     }
   };
 }

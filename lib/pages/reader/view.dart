@@ -1,6 +1,7 @@
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:hikari_novel_flutter/common/log.dart';
 import 'package:hikari_novel_flutter/models/reader_direction.dart';
 import 'package:hikari_novel_flutter/pages/reader/controller.dart';
 import 'package:hikari_novel_flutter/pages/reader/widgets/custom_header.dart';
@@ -22,12 +23,14 @@ class ReaderPage extends StatelessWidget {
 
   final controller = Get.put(ReaderController());
 
-  EdgeInsets get padding => EdgeInsets.fromLTRB(
+  final GlobalKey<VerticalReadPageState> _verticalReadPageKey = GlobalKey();
+
+  EdgeInsets _contentPadding(BuildContext context, {required bool inPageStatusBar}) => EdgeInsets.fromLTRB(
     controller.readerSettingsState.value.leftMargin,
     controller.readerSettingsState.value.topMargin,
     controller.readerSettingsState.value.rightMargin,
     controller.readerSettingsState.value.showStatusBar
-        ? controller.readerSettingsState.value.bottomMargin + kStatusBarPadding
+        ? controller.readerSettingsState.value.bottomMargin + kStatusBarPadding + (inPageStatusBar ? MediaQuery.of(context).padding.bottom : 0)
         : controller.readerSettingsState.value.bottomMargin,
   );
 
@@ -38,6 +41,16 @@ class ReaderPage extends StatelessWidget {
     color: controller.currentTextColor.value ?? Theme.of(Get.context!).colorScheme.onSurface,
   );
 
+  bool _useOverlayBottomStatusBar() {
+    final settings = controller.readerSettingsState.value;
+    return settings.showStatusBar && settings.direction == ReaderDirection.upToDown;
+  }
+
+  bool _useInPageBottomStatusBar() {
+    final settings = controller.readerSettingsState.value;
+    return settings.showStatusBar && settings.direction != ReaderDirection.upToDown;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -45,52 +58,20 @@ class ReaderPage extends StatelessWidget {
         children: [
           Obx(
             () => controller.pageState.value == PageState.success
-                ? GestureDetector(
-                    behavior: HitTestBehavior.translucent, //防止上下滚动事件被拦截，只拦截点击事件
-                    onTap: () => controller.showBar.value = !controller.showBar.value,
-                    child: ReaderBackground(
-                      child: Obx(
-                        () => Padding(
-                          padding: EdgeInsets.only(
-                            bottom: controller.readerSettingsState.value.showStatusBar ? kStatusBarPadding + MediaQuery.of(context).padding.bottom : 0,
-                          ),
-                          child: _buildReadPage(context),
+                ? ReaderBackground(
+                    child: Obx(
+                      () => Padding(
+                        padding: EdgeInsets.only(
+                          bottom: _useOverlayBottomStatusBar()
+                              ? kStatusBarPadding + MediaQuery.of(context).padding.bottom
+                              : 0,
                         ),
+                        child: _buildReadPage(context),
                       ),
                     ),
                   )
                 : Container(),
           ),
-          Obx(() {
-            final bool isEnabled =
-                controller.pageState.value == PageState.success && controller.readerSettingsState.value.direction != ReaderDirection.upToDown;
-
-            return isEnabled
-                ? Positioned.fill(
-                    child: Row(
-                      children: [
-                        Expanded(
-                          flex: 1,
-                          child: GestureDetector(
-                            onTap: () =>
-                                controller.readerSettingsState.value.direction == ReaderDirection.leftToRight ? controller.prevPage() : controller.nextPage(),
-                            behavior: HitTestBehavior.translucent,
-                          ),
-                        ),
-                        const Expanded(flex: 1, child: SizedBox()),
-                        Expanded(
-                          flex: 1,
-                          child: GestureDetector(
-                            onTap: () =>
-                                controller.readerSettingsState.value.direction == ReaderDirection.leftToRight ? controller.nextPage() : controller.prevPage(),
-                            behavior: HitTestBehavior.translucent,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : Container();
-          }),
           Obx(() => Offstage(offstage: controller.pageState.value != PageState.loading, child: const LoadingPage())),
           Obx(
             () => Offstage(
@@ -218,53 +199,103 @@ class ReaderPage extends StatelessWidget {
   }
 
   Widget _buildVertical(BuildContext context) {
-    return SizedBox(
-      height: double.infinity,
-      child: EasyRefresh(
-        header: MaterialHeader2(
-          triggerOffset: 80,
-          child: Container(
-            decoration: BoxDecoration(color: Theme.of(context).colorScheme.primaryContainer, borderRadius: BorderRadius.circular(24)),
-            padding: const EdgeInsets.all(12),
-            child: Icon(Icons.arrow_circle_up, color: Theme.of(context).colorScheme.primary),
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () => controller.showBar.value = !controller.showBar.value,
+      child: SizedBox(
+        height: double.infinity,
+        child: EasyRefresh(
+          header: MaterialHeader2(
+            triggerOffset: 80,
+            child: Container(
+              decoration: BoxDecoration(color: Theme.of(context).colorScheme.primaryContainer, borderRadius: BorderRadius.circular(24)),
+              padding: const EdgeInsets.all(12),
+              child: Icon(Icons.arrow_circle_up, color: Theme.of(context).colorScheme.primary),
+            ),
           ),
-        ),
-        footer: MaterialFooter2(
-          triggerOffset: 80,
-          child: Container(
-            decoration: BoxDecoration(color: Theme.of(context).colorScheme.primaryContainer, borderRadius: BorderRadius.circular(24)),
-            padding: const EdgeInsets.all(12),
-            child: Icon(Icons.arrow_circle_down, color: Theme.of(context).colorScheme.primary),
+          footer: MaterialFooter2(
+            triggerOffset: 80,
+            child: Container(
+              decoration: BoxDecoration(color: Theme.of(context).colorScheme.primaryContainer, borderRadius: BorderRadius.circular(24)),
+              padding: const EdgeInsets.all(12),
+              child: Icon(Icons.arrow_circle_down, color: Theme.of(context).colorScheme.primary),
+            ),
           ),
-        ),
-        refreshOnStart: false,
-        onRefresh: controller.prevChapter,
-        onLoad: controller.nextChapter,
-        child: VerticalReadPage(
-          controller.text.value,
-          controller.images,
-          initPosition: controller.getInitLocation(),
-          padding: padding,
-          style: textStyle,
-          controller: controller.scrollController,
-          onScroll: (position, max) {
-            if (max == 0 && position == 0) {
-              //仅一页的情况下
-              controller.currentLocation.value = 0;
-              controller.verticalProgress.value = 100;
-              controller.setReadHistory(); //立即更新历史阅读记录
-            } else if (max > 0) {
-              controller.currentLocation.value = position.toInt();
-              controller.verticalProgress.value = ((position.toInt() / max.toInt()) * 100).toInt();
-              //由controller的debounce监听location变化，判断是否更新历史阅读记录
-            }
-          },
+          refreshOnStart: false,
+          onRefresh: controller.prevChapter,
+          onLoad: controller.nextChapter,
+          child: VerticalReadPage(
+            key: _verticalReadPageKey,
+            controller.text.value,
+            controller.images,
+            initialOffset: controller.initialVerticalOffset,
+            padding: _contentPadding(context, inPageStatusBar: false),
+            style: textStyle,
+            paraSpacing: controller.readerSettingsState.value.readerParaSpacing,
+            paraIndent: controller.readerSettingsState.value.readerParaIndent,
+            onScroll: (position, max) {
+              if (max == 0 && position == 0) {
+                controller.currentLocation.value = 0;
+                controller.verticalProgress.value = 100;
+                controller.setReadHistory();
+              } else if (max > 0) {
+                controller.currentLocation.value = position.toInt();
+                controller.verticalProgress.value = ((position.toInt() / max.toInt()) * 100).clamp(0, 100).toInt();
+              }
+            },
+          ),
         ),
       ),
     );
   }
 
   Widget _buildHorizontal(BuildContext context) {
+    final usePaperCurl = controller.readerSettingsState.value.pageTurningAnimation;
+    final horizontalReader = HorizontalReadPage(
+      controller.text.value,
+      controller.images,
+      initIndex: controller.initialHorizontalIndex,
+      padding: _contentPadding(context, inPageStatusBar: _useInPageBottomStatusBar()),
+      style: textStyle,
+      reverse: controller.readerSettingsState.value.direction == ReaderDirection.rightToLeft,
+      isDualPage: controller.isDualPage,
+      dualPageSpacing: controller.readerSettingsState.value.dualPageSpacing,
+      controller: controller.pageController,
+      pageTurningAnimation: controller.readerSettingsState.value.pageTurningAnimation,
+      paraSpacing: controller.readerSettingsState.value.readerParaSpacing,
+      paraIndent: controller.readerSettingsState.value.readerParaIndent,
+      paperCurlController: controller.paperCurlController,
+      backgroundColor: controller.currentBgColor.value ?? Theme.of(context).colorScheme.surface,
+      backsideColor: Color.lerp(
+        controller.currentBgColor.value ?? Theme.of(context).colorScheme.surface,
+        Theme.of(context).colorScheme.surfaceTint,
+        Theme.of(context).brightness == Brightness.dark ? 0.18 : 0.10,
+      ),
+      pageFooter: _useInPageBottomStatusBar() ? _buildInPageStatusBar(context) : null,
+      onCenterTap: () => controller.showBar.value = !controller.showBar.value,
+      onLeftTap: controller.prevPage,
+      onRightTap: controller.nextPage,
+      onReachStart: controller.prevChapter,
+      onReachEnd: controller.nextChapter,
+      onPageChanged: (index, max) {
+        controller.currentIndex.value = index;
+        controller.maxPage.value = max;
+        if (max == 1 && index == 0) {
+          //仅一页的情况下
+          controller.horizontalProgress.value = 100;
+          controller.setReadHistory(); //立即更新历史阅读记录
+        } else if (max > 0) {
+          controller.horizontalProgress.value = int.parse(((index + 1) / max * 100.0).toStringAsFixed(0)).clamp(0, 100);
+          //由controller的debounce监听currentIndex变化，判断是否更新历史阅读记录
+        }
+      },
+      onViewImage: (index) => Get.toNamed(RoutePath.photo, arguments: {"gallery_mode": true, "list": controller.images, "index": index}),
+    );
+
+    if (usePaperCurl) {
+      return horizontalReader;
+    }
+
     return EasyRefresh(
       header: MaterialHeader2(
         triggerOffset: 80,
@@ -285,30 +316,7 @@ class ReaderPage extends StatelessWidget {
       refreshOnStart: false,
       onRefresh: controller.prevChapter,
       onLoad: controller.nextChapter,
-      child: HorizontalReadPage(
-        controller.text.value,
-        controller.images,
-        initIndex: controller.getInitLocation(),
-        padding: padding,
-        style: textStyle,
-        reverse: controller.readerSettingsState.value.direction == ReaderDirection.rightToLeft,
-        isDualPage: controller.isDualPage,
-        dualPageSpacing: controller.readerSettingsState.value.dualPageSpacing,
-        controller: controller.pageController,
-        onPageChanged: (index, max) {
-          controller.currentIndex.value = index;
-          controller.maxPage.value = max;
-          if (max == 1 && index == 0) {
-            //仅一页的情况下
-            controller.horizontalProgress.value = 100;
-            controller.setReadHistory(); //立即更新历史阅读记录
-          } else if (max > 0) {
-            controller.horizontalProgress.value = int.parse(((index + 1) / max * 100.0).toStringAsFixed(0));
-            //由controller的debounce监听currentIndex变化，判断是否更新历史阅读记录
-          }
-        },
-        onViewImage: (index) => Get.toNamed(RoutePath.photo, arguments: {"gallery_mode": true, "list": controller.images, "index": index}),
-      ),
+      child: horizontalReader,
     );
   }
 
@@ -330,7 +338,7 @@ class ReaderPage extends StatelessWidget {
                   value: value.toDouble(),
                   max: 100.0,
                   onChanged: (e) {
-                    controller.scrollController.jumpTo(controller.scrollController.position.maxScrollExtent * (e / 100.0));
+                    _verticalReadPageKey.currentState!.jumpToProgress(e);
                   },
                   divisions: 99,
                 ),
@@ -451,43 +459,67 @@ class ReaderPage extends StatelessWidget {
   }
 
   Widget _buildBottomStatusBar(BuildContext context) {
+    final spacing = controller.readerSettingsState.value.readerBottomStatusBarHorizontalSpacing.toDouble();
     return Positioned(
       right: 8,
       left: 8,
       bottom: 4,
       child: Obx(
         () => Offstage(
-          offstage: !(controller.readerSettingsState.value.showStatusBar && controller.pageState.value == PageState.success),
+          offstage: !(_useOverlayBottomStatusBar() && controller.pageState.value == PageState.success),
           child: Padding(
-            padding: EdgeInsets.fromLTRB(12, 0, 12, MediaQuery.of(context).padding.bottom),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                StreamBuilder(
-                  stream: controller.clockStream(),
-                  builder: (_, snapshot) {
-                    final now = snapshot.data ?? DateTime.now();
-                    final timeString = DateFormat('HH:mm').format(now);
-                    return Text(timeString, style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface));
-                  },
-                ),
-                const SizedBox(width: 8),
-                _buildBattery(context, controller.batteryLevel.value),
-                Text("${controller.batteryLevel.value}%", style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface)),
-                const Spacer(),
-                controller.readerSettingsState.value.direction == ReaderDirection.upToDown
-                    ? Text("${controller.verticalProgress.value} %", style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface))
-                    : Text(
-                        "${controller.currentIndex.value + 1} / ${controller.maxPage.value}",
-                        style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface),
-                      ),
-              ],
-            ),
+            padding: EdgeInsets.fromLTRB(spacing, 0, spacing, MediaQuery.of(context).padding.bottom),
+            child: _buildStatusBarContent(context),
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildInPageStatusBar(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    final spacing = controller.readerSettingsState.value.readerBottomStatusBarHorizontalSpacing.toDouble();
+    return SizedBox(
+      width: double.infinity,
+      height: kStatusBarPadding.toDouble() + bottomInset,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(spacing, 0, spacing, bottomInset),
+        child: _buildStatusBarContent(context),
+      ),
+    );
+  }
+
+  Widget _buildStatusBarContent(BuildContext context) {
+    return Obx(() {
+      final textColor = controller.currentTextColor.value ?? Theme.of(context).colorScheme.onSurface;
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          StreamBuilder(
+            stream: controller.clockStream(),
+            builder: (_, snapshot) {
+              final now = snapshot.data ?? DateTime.now();
+              final timeString = DateFormat('HH:mm').format(now);
+              return Text(timeString, style: TextStyle(fontSize: 13, color: textColor));
+            },
+          ),
+          const SizedBox(width: 8),
+          IconTheme(
+            data: IconThemeData(color: textColor),
+            child: _buildBattery(context, controller.batteryLevel.value),
+          ),
+          Text("${controller.batteryLevel.value}%", style: TextStyle(fontSize: 13, color: textColor)),
+          const Spacer(),
+          controller.readerSettingsState.value.direction == ReaderDirection.upToDown
+              ? Text("${controller.verticalProgress.value} %", style: TextStyle(fontSize: 13, color: textColor))
+              : Text(
+                  "${controller.currentIndex.value + 1} / ${controller.maxPage.value}",
+                  style: TextStyle(fontSize: 13, color: textColor),
+                ),
+        ],
+      );
+    });
   }
 
   Widget _buildBattery(BuildContext context, int value) {

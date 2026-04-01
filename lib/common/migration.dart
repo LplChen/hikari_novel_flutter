@@ -50,4 +50,8 @@ class Migration {
     LocalStorageService.instance.setCookie(null);
     Request.deleteCookie();
   }
+
+  static void fromThreeToFour(AppDatabase appDatabase) {
+    appDatabase.deleteAllReadHistory();
+  }
 }

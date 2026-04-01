@@ -68,6 +68,32 @@ class ReaderSettingPage extends StatelessWidget {
             onChangeEnd: (value) => controller.changeLineSpacing(value),
           ),
         ),
+        Obx(
+          () => SliderTile(
+            title: "para_indent".tr,
+            leading: const Icon(Icons.format_indent_increase),
+            min: 0,
+            max: 10,
+            divisions: 10,
+            decimalPlaces: 0,
+            value: controller.readerSettingsState.value.readerParaIndent,
+            onChanged: (value) => controller.readerSettingsState.value = controller.readerSettingsState.value.copyWith(readerParaIndent: value.toInt()),
+            onChangeEnd: (value) => controller.changeReaderParaIndent(value.toInt()),
+          ),
+        ),
+        Obx(
+          () => SliderTile(
+            title: "para_spacing".tr,
+            leading: const Icon(Icons.expand),
+            min: 0,
+            max: 50,
+            divisions: 50,
+            decimalPlaces: 0,
+            value: controller.readerSettingsState.value.readerParaSpacing,
+            onChanged: (value) => controller.readerSettingsState.value = controller.readerSettingsState.value.copyWith(readerParaSpacing: value.toInt()),
+            onChangeEnd: (value) => controller.changeReaderParaSpacing(value.toInt()),
+          ),
+        ),
         Obx(() {
           final sub = switch (controller.readerSettingsState.value.direction) {
             ReaderDirection.leftToRight => "left_to_right".tr,
@@ -156,7 +182,7 @@ class ReaderSettingPage extends StatelessWidget {
         ),
         Obx(() {
           final dualPageMode = switch (controller.readerSettingsState.value.dualPageMode) {
-            DualPageMode.auto => Get.context!.isLargeScreen(),
+            DualPageMode.auto => Get.context!.shouldAutoUseDualPage(),
             DualPageMode.enabled => true,
             DualPageMode.disabled => false,
           };
@@ -463,6 +489,20 @@ class ReaderSettingPage extends StatelessWidget {
             value: controller.readerSettingsState.value.bottomMargin,
             onChanged: (value) => controller.readerSettingsState.value = controller.readerSettingsState.value.copyWith(bottomMargin: value),
             onChangeEnd: (value) => controller.changeBottomMargin(value),
+          ),
+        ),
+        Obx(
+          () => SliderTile(
+            title: "bottomStatusBarHorizontalSpacing".tr,
+            leading: const Icon(Icons.swap_horiz),
+            min: 0,
+            max: 100,
+            divisions: 100,
+            decimalPlaces: 0,
+            value: controller.readerSettingsState.value.readerBottomStatusBarHorizontalSpacing,
+            onChanged: (value) =>
+                controller.readerSettingsState.value = controller.readerSettingsState.value.copyWith(readerBottomStatusBarHorizontalSpacing: value.toInt()),
+            onChangeEnd: (value) => controller.changeReaderBottomStatusBarHorizontalSpacing(value.toInt()),
           ),
         ),
       ],

@@ -90,7 +90,7 @@ class DevToolsPage extends StatelessWidget {
               : ListView.separated(
                   shrinkWrap: true,
                   itemCount: items.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (c, i) {
                     final f = items[i] as File;
                     final name = f.path.split(Platform.pathSeparator).last;

@@ -1,9 +1,9 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
 
 import '../../../network/request.dart';
+import 'paper_curl_pager.dart';
 
 class HorizontalReadPage extends StatefulWidget {
   final String text;
@@ -15,8 +15,20 @@ class HorizontalReadPage extends StatefulWidget {
   final bool reverse;
   final bool isDualPage;
   final double dualPageSpacing;
+  final bool pageTurningAnimation;
+  final int paraSpacing;
+  final int paraIndent;
+  final PaperCurlPagerController? paperCurlController;
+  final Widget? pageFooter;
+  final Color? backgroundColor;
+  final Color? backsideColor;
   final Function(int index, int max) onPageChanged;
   final Function(int index) onViewImage;
+  final VoidCallback? onCenterTap;
+  final VoidCallback? onLeftTap;
+  final VoidCallback? onRightTap;
+  final VoidCallback? onReachStart;
+  final VoidCallback? onReachEnd;
 
   const HorizontalReadPage(
     this.text,
@@ -28,6 +40,18 @@ class HorizontalReadPage extends StatefulWidget {
     this.reverse = false,
     required this.isDualPage,
     required this.dualPageSpacing,
+    this.pageTurningAnimation = false,
+    required this.paraSpacing,
+    required this.paraIndent,
+    this.paperCurlController,
+    this.pageFooter,
+    this.backgroundColor,
+    this.backsideColor,
+    this.onCenterTap,
+    this.onLeftTap,
+    this.onRightTap,
+    this.onReachStart,
+    this.onReachEnd,
     required this.onPageChanged,
     required this.onViewImage,
     super.key,
@@ -56,7 +80,8 @@ class _HorizontalReadPageState extends State<HorizontalReadPage> with WidgetsBin
   @override
   void initState() {
     super.initState();
-    lastSize = Get.size;
+    index = widget.initIndex;
+    lastSize = _currentViewSize();
     _lastLayoutSig = _layoutSignature();
     WidgetsBinding.instance.addObserver(this);
     resetPage();
@@ -70,10 +95,18 @@ class _HorizontalReadPageState extends State<HorizontalReadPage> with WidgetsBin
 
   @override
   void didChangeMetrics() {
-    if (lastSize != Get.size) {
-      lastSize = Get.size;
-      resetPage();
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final newSize = _currentViewSize();
+      if (lastSize != newSize) {
+        lastSize = newSize;
+        final newSig = _layoutSignature();
+        if (newSig != _lastLayoutSig) {
+          _lastLayoutSig = newSig;
+          resetPage();
+        }
+      }
+    });
   }
 
   void resetPage() {
@@ -81,9 +114,10 @@ class _HorizontalReadPageState extends State<HorizontalReadPage> with WidgetsBin
     textStyle = widget.style;
     images = List<String>.from(widget.images); //转换为纯净的List<String>
     padding = widget.padding;
-    pageWidth = (Get.width - padding.left - padding.right).floorToDouble();
+    final size = _currentViewSize();
+    pageWidth = (size.width - padding.left - padding.right).floorToDouble();
     pageWidth = widget.isDualPage ? (pageWidth - widget.dualPageSpacing * 2) / 2 : pageWidth;
-    pageHeight = Get.height - padding.top - padding.bottom;
+    pageHeight = size.height - padding.top - padding.bottom;
     if (text.isEmpty && images.isEmpty) {
       index = 0;
       setState(() {
@@ -114,21 +148,86 @@ class _HorizontalReadPageState extends State<HorizontalReadPage> with WidgetsBin
         });
       }
       resetPage();
+      return;
+    }
+
+    if (oldWidget.pageTurningAnimation != widget.pageTurningAnimation || oldWidget.isDualPage != widget.isDualPage) {
+      final rawTarget = oldWidget.isDualPage == widget.isDualPage ? index : _convertIndexBetweenPageModes(index, oldWidget.isDualPage, widget.isDualPage);
+      final target = (rawTarget.clamp(0, _pageCount() <= 0 ? 0 : _pageCount() - 1) as num).toInt();
+      index = target;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (widget.pageTurningAnimation) {
+          widget.paperCurlController?.jumpToPage(target);
+        } else if (widget.controller.hasClients) {
+          widget.controller.jumpToPage(target);
+        }
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return PageView.builder(
-      controller: widget.controller,
-      reverse: widget.reverse,
-      itemCount: _pageCount(),
-      onPageChanged: (v) {
-        index = v;
-        widget.onPageChanged(v, _pageCount());
+    if (widget.pageTurningAnimation) {
+      return PaperCurlPager(
+        controller: widget.paperCurlController,
+        pages: List<Widget>.generate(_pageCount(), (i) => RepaintBoundary(child: _buildPage(i))),
+        initialIndex: (index.clamp(0, _pageCount() <= 0 ? 0 : _pageCount() - 1) as num).toInt(),
+        interactivePageIndices: {
+          for (var i = 0; i < _pageCount(); i++)
+            if (_spreadContainsImage(i)) i,
+        },
+        reverse: widget.reverse,
+        animationEnabled: true,
+        backgroundColor: widget.backgroundColor ?? Theme.of(context).colorScheme.surface,
+        backsideColor: widget.backsideColor ??
+            Color.lerp(
+              widget.backgroundColor ?? Theme.of(context).colorScheme.surface,
+              Theme.of(context).colorScheme.surfaceTint,
+              Theme.of(context).brightness == Brightness.dark ? 0.18 : 0.10,
+            ),
+        onCenterTap: widget.onCenterTap,
+        onReachStart: widget.onReachStart,
+        onReachEnd: widget.onReachEnd,
+        onIndexChanged: (v) {
+          index = v;
+          widget.onPageChanged(v, _pageCount());
+        },
+      );
+    }
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTapUp: (details) {
+        final width = context.size?.width ?? MediaQuery.of(context).size.width;
+        final logicalX = widget.reverse ? (width - details.localPosition.dx).clamp(0.0, width) : details.localPosition.dx;
+        final left = width * 0.28;
+        final right = width * 0.72;
+        if (logicalX <= left) {
+          widget.onLeftTap?.call();
+          return;
+        }
+        if (logicalX >= right) {
+          widget.onRightTap?.call();
+          return;
+        }
+        widget.onCenterTap?.call();
       },
-      itemBuilder: (_, i) => _buildPage(i),
+      child: PageView.builder(
+        controller: widget.controller,
+        reverse: widget.reverse,
+        itemCount: _pageCount(),
+        onPageChanged: (v) {
+          index = v;
+          widget.onPageChanged(v, _pageCount());
+        },
+        itemBuilder: (_, i) => _buildPage(i),
+      ),
     );
+  }
+
+  int _convertIndexBetweenPageModes(int value, bool fromDualPage, bool toDualPage) {
+    if (fromDualPage == toDualPage) return value;
+    return toDualPage ? value ~/ 2 : value * 2;
   }
 
   int _pageCount() {
@@ -143,16 +242,38 @@ class _HorizontalReadPageState extends State<HorizontalReadPage> with WidgetsBin
     }
   }
 
-  Widget _buildPage(int index) {
-    if (widget.isDualPage) {
-      return _buildDualPage(index);
-    } else {
-      if (pages[index] is TextPage) {
-        return _buildSingleText(index);
-      } else {
-        return _buildImage(index);
-      }
+
+  bool _spreadContainsImage(int index) {
+    if (!widget.isDualPage) {
+      return index >= 0 && index < pages.length && pages[index] is ImagePage;
     }
+
+    final firstIndex = index * 2;
+    final secondIndex = firstIndex + 1;
+    final firstHasImage = firstIndex >= 0 && firstIndex < pages.length && pages[firstIndex] is ImagePage;
+    final secondHasImage = secondIndex >= 0 && secondIndex < pages.length && pages[secondIndex] is ImagePage;
+    return firstHasImage || secondHasImage;
+  }
+
+  Widget _buildPage(int index) {
+    final child = widget.isDualPage
+        ? _buildDualPage(index)
+        : (pages[index] is TextPage ? _buildSingleText(index) : _buildImage(index));
+
+    if (widget.pageFooter == null) {
+      return child;
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        child,
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: IgnorePointer(child: widget.pageFooter!),
+        ),
+      ],
+    );
   }
 
   Widget _buildDualPage(int i) {
@@ -248,7 +369,7 @@ class _HorizontalReadPageState extends State<HorizontalReadPage> with WidgetsBin
       child: SizedBox(
         height: pageHeight,
         child: CustomPaint(
-          painter: NovelTextPainter((pages[index] as TextPage).texts, style: widget.style, fontHeight: fontHeight),
+          painter: NovelTextPainter((pages[index] as TextPage).rows, style: widget.style, fontHeight: fontHeight, paragraphSpacing: widget.paraSpacing.toDouble()),
         ),
       ),
     );
@@ -261,7 +382,7 @@ class _HorizontalReadPageState extends State<HorizontalReadPage> with WidgetsBin
           height: pageHeight,
           width: constraints.maxWidth,
           child: CustomPaint(
-            painter: NovelTextPainter((pages[index] as TextPage).texts, style: widget.style, fontHeight: fontHeight),
+            painter: NovelTextPainter((pages[index] as TextPage).rows, style: widget.style, fontHeight: fontHeight, paragraphSpacing: widget.paraSpacing.toDouble()),
           ),
         );
       },
@@ -307,11 +428,15 @@ class _HorizontalReadPageState extends State<HorizontalReadPage> with WidgetsBin
         fontSize: fontSize,
         width: pageWidth,
         maxLine: maxLine,
+        pageHeight: pageHeight,
         lineHeight: lineHeight,
+        paraSpacing: widget.paraSpacing.toDouble(),
+        paraIndent: widget.paraIndent,
         chineseWidth: chineseCharSize.width,
         englishWidth: englishCharSize.width,
         symbolWidth: symbolCharSize.width,
         spaceWidth: spaceCharSize.width,
+        fontHeight: fontHeight,
       ),
     );
 
@@ -321,97 +446,128 @@ class _HorizontalReadPageState extends State<HorizontalReadPage> with WidgetsBin
     setState(() {}); //刷新UI
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      widget.controller.jumpToPage(widget.initIndex);
+      final target = (index.clamp(0, _pageCount() <= 0 ? 0 : _pageCount() - 1) as num).toInt();
+      if (widget.pageTurningAnimation) {
+        widget.paperCurlController?.jumpToPage(target);
+      } else {
+        widget.controller.jumpToPage(target);
+      }
     });
   }
 
   static List<Page> splitText(ComputeParameter parameter) {
-    var str = parameter.rawText;
-    var img = parameter.rawImage;
+    final str = parameter.rawText;
+    final img = parameter.rawImage;
 
-    List<Page> pages = [];
+    final List<Page> pages = [];
 
     if (str.isNotEmpty) {
-      //定义正则表达式（匹配中文字符、英文单词、符号、全角符号、数字串）
-      //RegExp reg = RegExp(r"([\u4e00-\u9fa5]|\b\w+\b|\x20|　|\S|\p{Han}|\n)");
-      RegExp reg = RegExp(r"([^\x00-\xff]|\b\w+\b|\p{P}|\x20|\S|\u3000|\n)");
-
-      //使用正则表达式分割字符串
-      List<String> resultList = reg.allMatches(str).map((match) => match.group(0) ?? "").toList();
-
-      List<CharInfo> chars = [];
+      final reg = RegExp(r"([^\x00-\xff]|\b\w+\b|\p{P}|\x20|\S|\u3000|\n)");
       final chineseExp = RegExp(r"[^\x00-\xff]");
       final wordExp = RegExp(r"\w+");
       final symbolExp = RegExp(r"\p{P}");
       final newLineExp = RegExp(r"\n");
 
-      for (var item in resultList) {
-        if (chineseExp.hasMatch(item)) {
-          chars.add(CharInfo(text: item, width: parameter.chineseWidth, type: CharType.chinese));
-          continue;
+      final paragraphs = str.replaceAll('\r\n', '\n').split(RegExp(r'\n\s*\n+')).where((e) => e.trim().isNotEmpty).toList();
+      final indentPrefix = parameter.paraIndent > 0 ? List.filled(parameter.paraIndent, '　').join() : '';
+      final List<TextRow> allRows = [];
+
+      void flushWrappedLine(String line, {required bool paragraphEnd, required bool isFirstLineOfParagraph}) {
+        final source = isFirstLineOfParagraph ? '$indentPrefix${line.trimLeft()}' : line;
+        if (source.isEmpty) {
+          allRows.add(TextRow('', paragraphEnd: paragraphEnd));
+          return;
         }
-        if (wordExp.hasMatch(item)) {
-          chars.add(CharInfo(text: item, width: parameter.englishWidth * item.length, type: CharType.word));
-          continue;
+
+        final lineMatches = reg.allMatches(source).map((match) => match.group(0) ?? '').toList();
+        String rowText = '';
+        double currentRowWidth = 0;
+
+        for (final item in lineMatches) {
+          final charInfo = charsFromToken(item, parameter, chineseExp, wordExp, symbolExp, newLineExp);
+          if ((currentRowWidth + charInfo.width) > parameter.width && rowText.isNotEmpty) {
+            allRows.add(TextRow(rowText, paragraphEnd: false));
+            rowText = '';
+            currentRowWidth = 0;
+          }
+          rowText += charInfo.text;
+          currentRowWidth += charInfo.width;
         }
-        if (newLineExp.hasMatch(item)) {
-          chars.add(CharInfo(text: "", width: 0, type: CharType.newline));
-          continue;
-        }
-        if (item == " ") {
-          chars.add(CharInfo(text: item, width: parameter.spaceWidth, type: CharType.symbol));
-          continue;
-        }
-        if (symbolExp.hasMatch(item)) {
-          chars.add(CharInfo(text: item, width: parameter.symbolWidth, type: CharType.symbol));
-          continue;
-        }
-        chars.add(CharInfo(text: item, width: parameter.symbolWidth, type: CharType.symbol));
+
+        allRows.add(TextRow(rowText, paragraphEnd: paragraphEnd));
       }
 
-      List<String> currentTextPage = [];
-      String rowText = "";
-      double currentRowWidth = 0;
+      for (final paragraph in paragraphs) {
+        final lines = paragraph.split('\n');
+        for (int i = 0; i < lines.length; i++) {
+          flushWrappedLine(
+            lines[i],
+            paragraphEnd: i == lines.length - 1,
+            isFirstLineOfParagraph: i == 0,
+          );
+        }
+      }
 
-      for (var item in chars) {
-        //是否超出了最大行数
-        if (currentTextPage.length >= parameter.maxLine) {
+      List<TextRow> currentTextPage = [];
+      double currentPageHeight = 0;
+      final pageLimit = parameter.pageHeight > 0 ? parameter.pageHeight : (parameter.maxLine * parameter.fontHeight);
+
+      for (final row in allRows) {
+        final rowHeight = parameter.fontHeight + (row.paragraphEnd ? parameter.paraSpacing : 0);
+        if (currentTextPage.isNotEmpty && (currentPageHeight + rowHeight) > pageLimit) {
           pages.add(TextPage(pages.length, currentTextPage));
           currentTextPage = [];
+          currentPageHeight = 0;
         }
-        //新行
-        if (item.type == CharType.newline) {
-          currentTextPage.add(rowText);
-          rowText = "";
-          currentRowWidth = 0;
-          continue;
-        }
-        //是否超出了最大宽度
-        if ((currentRowWidth + item.width) > parameter.width) {
-          currentTextPage.add(rowText);
-          rowText = "";
-          currentRowWidth = 0;
-        }
-        rowText += item.text;
-        currentRowWidth += item.width;
+        currentTextPage.add(row);
+        currentPageHeight += rowHeight;
       }
 
-      currentTextPage.add(rowText);
-      pages.add(TextPage(pages.length, currentTextPage));
-      final first = pages.first as TextPage;
-      if (pages.length == 1 && first.texts.length == 1 && first.texts.first.isEmpty) {
-        return [];
+      if (currentTextPage.isNotEmpty) {
+        pages.add(TextPage(pages.length, currentTextPage));
+      }
+
+      if (pages.length == 1) {
+        final first = pages.first as TextPage;
+        if (first.rows.length == 1 && first.rows.first.text.isEmpty) {
+          return [];
+        }
       }
     }
 
-    //添加图片
     if (img.isNotEmpty) {
-      for (var i in img) {
+      for (final i in img) {
         pages.add(ImagePage(pages.length, i));
       }
     }
 
     return pages;
+  }
+
+  static CharInfo charsFromToken(
+    String item,
+    ComputeParameter parameter,
+    RegExp chineseExp,
+    RegExp wordExp,
+    RegExp symbolExp,
+    RegExp newLineExp,
+  ) {
+    if (chineseExp.hasMatch(item)) {
+      return CharInfo(text: item, width: parameter.chineseWidth, type: CharType.chinese);
+    }
+    if (wordExp.hasMatch(item)) {
+      return CharInfo(text: item, width: parameter.englishWidth * item.length, type: CharType.word);
+    }
+    if (newLineExp.hasMatch(item)) {
+      return CharInfo(text: '', width: 0, type: CharType.newline);
+    }
+    if (item == ' ') {
+      return CharInfo(text: item, width: parameter.spaceWidth, type: CharType.symbol);
+    }
+    if (symbolExp.hasMatch(item)) {
+      return CharInfo(text: item, width: parameter.symbolWidth, type: CharType.symbol);
+    }
+    return CharInfo(text: item, width: parameter.symbolWidth, type: CharType.symbol);
   }
 
   Size calcFontSize(String text, {required double fontSize, required double lineHeight}) {
@@ -427,14 +583,18 @@ class _HorizontalReadPageState extends State<HorizontalReadPage> with WidgetsBin
     return painter.size;
   }
 
-  //排版几何参数的签名
   String _layoutSignature() {
     final s = widget.style;
     final p = widget.padding;
+    final size = _currentViewSize();
 
     return [
       widget.text.length,
       widget.images.length,
+      widget.isDualPage,
+      widget.dualPageSpacing,
+      size.width,
+      size.height,
       s.fontSize,
       s.height,
       s.letterSpacing,
@@ -444,7 +604,18 @@ class _HorizontalReadPageState extends State<HorizontalReadPage> with WidgetsBin
       p.right,
       p.top,
       p.bottom,
+      widget.paraIndent,
+      widget.paraSpacing,
     ].join("|");
+  }
+
+  Size _currentViewSize() {
+    final views = WidgetsBinding.instance.platformDispatcher.views;
+    if (views.isNotEmpty) {
+      final view = views.first;
+      return view.physicalSize / view.devicePixelRatio;
+    }
+    return const Size(0, 0);
   }
 }
 
@@ -480,11 +651,15 @@ class ComputeParameter {
   double width;
   double fontSize;
   double lineHeight;
+  double pageHeight;
+  double paraSpacing;
+  int paraIndent;
   int maxLine;
   double chineseWidth;
   double englishWidth;
   double symbolWidth;
   double spaceWidth;
+  double fontHeight;
 
   ComputeParameter({
     required this.rawText,
@@ -492,40 +667,44 @@ class ComputeParameter {
     required this.fontSize,
     required this.width,
     required this.maxLine,
+    required this.pageHeight,
     required this.lineHeight,
+    required this.paraSpacing,
+    required this.paraIndent,
     required this.chineseWidth,
     required this.englishWidth,
     required this.symbolWidth,
     required this.spaceWidth,
+    required this.fontHeight,
   });
 }
 
 class NovelTextPainter extends CustomPainter {
   final TextStyle style;
   final double fontHeight;
-  final List<String> text;
+  final double paragraphSpacing;
+  final List<TextRow> rows;
 
-  NovelTextPainter(this.text, {required this.style, required this.fontHeight});
+  NovelTextPainter(this.rows, {required this.style, required this.fontHeight, required this.paragraphSpacing});
 
   @override
   void paint(Canvas canvas, Size size) {
-    var i = 0;
-    for (var item in text) {
-      TextSpan textSpan = TextSpan(text: item, style: style);
-
+    double y = 0;
+    for (final row in rows) {
+      final textSpan = TextSpan(text: row.text, style: style);
       final textPainter = TextPainter(text: textSpan, maxLines: 1, textAlign: TextAlign.justify, textDirection: TextDirection.ltr);
       textPainter.layout(maxWidth: size.width);
-
-      final offset = Offset(0, i * fontHeight);
-      textPainter.paint(canvas, offset);
-
-      i++;
+      textPainter.paint(canvas, Offset(0, y));
+      y += fontHeight;
+      if (row.paragraphEnd) {
+        y += paragraphSpacing;
+      }
     }
   }
 
   @override
   bool shouldRepaint(covariant NovelTextPainter oldDelegate) {
-    return oldDelegate.style != style || oldDelegate.text != text || oldDelegate.fontHeight != fontHeight;
+    return oldDelegate.style != style || oldDelegate.rows != rows || oldDelegate.fontHeight != fontHeight || oldDelegate.paragraphSpacing != paragraphSpacing;
   }
 }
 
@@ -536,9 +715,16 @@ abstract class Page {
 }
 
 class TextPage extends Page {
-  final List<String> texts;
+  final List<TextRow> rows;
 
-  TextPage(super.index, this.texts);
+  TextPage(super.index, this.rows);
+}
+
+class TextRow {
+  final String text;
+  final bool paragraphEnd;
+
+  const TextRow(this.text, {this.paragraphEnd = false});
 }
 
 class ImagePage extends Page {

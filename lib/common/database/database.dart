@@ -11,7 +11,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 3; //版本号
+  int get schemaVersion => 4; //版本号
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -20,6 +20,8 @@ class AppDatabase extends _$AppDatabase {
         Migration.fromOneToTwo(this);
       } else if (from == 2 && to == 3) {
         Migration.fromTwoToThree();
+      } else if (from == 3 && to == 4) {
+        Migration.fromThreeToFour(this);
       }
     },
   );
