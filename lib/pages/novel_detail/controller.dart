@@ -342,7 +342,12 @@ class NovelDetailController extends GetxController with GetSingleTickerProviderS
         DualPageMode.enabled => true,
         DualPageMode.disabled => false,
       };
-      return data.isDualPage == isDualPage && data.readerMode == LocalStorageService.instance.getReaderDirection().index;
+      bool isSameReaderMode = switch (LocalStorageService.instance.getReaderDirection()) {
+        ReaderDirection.leftToRight => data.readerMode == kPageReadMode,
+        ReaderDirection.rightToLeft => data.readerMode == kPageReadMode,
+        ReaderDirection.upToDown => data.readerMode == kScrollReadMode,
+      };
+      return data.isDualPage == isDualPage && isSameReaderMode;
     }
   }
 

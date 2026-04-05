@@ -462,7 +462,7 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
         child: StreamBuilder(
           stream: DBService.instance.getLastestReadHistoryByAid(controller.aid),
           builder: (_, snapshot) {
-            if (snapshot.data == null && !controller.isValidReadHistory(snapshot.data)) {
+            if (snapshot.data == null || !controller.isValidReadHistory(snapshot.data)) {
               _isFabVisible = false;
               return Container();
             }
