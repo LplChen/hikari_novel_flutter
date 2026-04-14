@@ -131,7 +131,7 @@ class ReaderController extends GetxController {
 
     /*
      1) 至于这里的cid为什么不直接使用上面的<get cid>，是因为上面的<get cid>依赖currentVolumeIndex和currentChapterIndex。
-        而我们想要currentVolumeIndex和currentChapterIndex的时候，需要根据cid在catalogue中获取其对应的VolumeIndex和ChapterIndex。
+        而我们想要currentVolumeIndex和currentChapterIndex的时候，需要根据cid，在catalogue中获取其对应的VolumeIndex和ChapterIndex。
      2) 因为getContent()函数依赖cid，所以我把初始化cid的过程放到了onReady而不是onInit中。
      */
     final listOnlyWithCid = catalogue.map((cat) => cat.chapters.map((chap) => chap.cid).toList()).toList(); //仅提取含有cid的list
@@ -177,6 +177,11 @@ class ReaderController extends GetxController {
         return 0;
       }
     }
+  }
+
+  void clearInitLocation() {
+    initialHorizontalIndex = 0;
+    initialVerticalOffset = 0;
   }
 
   Stream<DateTime> clockStream() => Stream.periodic(const Duration(seconds: 1), (_) => DateTime.now());
@@ -274,6 +279,7 @@ class ReaderController extends GetxController {
         currentChapterIndex++;
       }
 
+      clearInitLocation();
       getContent();
     }
   }
@@ -296,6 +302,7 @@ class ReaderController extends GetxController {
         currentChapterIndex--;
       }
 
+      clearInitLocation();
       getContent();
     }
   }

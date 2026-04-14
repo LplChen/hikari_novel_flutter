@@ -58,7 +58,7 @@ class Util {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text("new_version_available".tr, style: const TextStyle(fontSize: 16)),
+                      Text("${"new_version_available".tr}: $remoteVer", style: const TextStyle(fontSize: 16)),
                       const SizedBox(height: 8),
                       MarkdownBlock(data: data["body"]),
                     ],

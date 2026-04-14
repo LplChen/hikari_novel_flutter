@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
-import '../../../common/log.dart';
 import '../../../router/route_path.dart';
 import '../../../network/request.dart';
 
@@ -36,7 +35,7 @@ class VerticalReadPageState extends State<VerticalReadPage> {
   late ScrollController controller;
   late List<ReaderItem> _items;
 
-  bool _didRestorePosition = false;
+  bool _restored = false;
 
   String text = "";
   List<String> images = [];
@@ -80,31 +79,18 @@ class VerticalReadPageState extends State<VerticalReadPage> {
 
   //初始位置恢复
   void _restoreInitialPosition() {
-    if (_didRestorePosition) return;
     if (!controller.hasClients) return;
 
     final position = controller.position;
 
-    if (!position.hasContentDimensions) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _restoreInitialPosition();
-      });
-      return;
-    }
+    if (!position.hasContentDimensions) return;
 
     double targetOffset = widget.initialOffset.toDouble();
     targetOffset = targetOffset.clamp(0, position.maxScrollExtent);
 
     controller.jumpTo(targetOffset);
 
-    _didRestorePosition = true;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      //强制保存一次阅读进度
-      if (maxPositionPixels >= 0) {
-        widget.onScroll(currentPositionPixels, maxPositionPixels);
-      }
-    });
+    widget.onScroll(currentPositionPixels, maxPositionPixels);
   }
 
   /// 进度跳转
@@ -149,9 +135,12 @@ class VerticalReadPageState extends State<VerticalReadPage> {
 
   @override
   Widget build(BuildContext context) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _restoreInitialPosition();
-    });
+    if (!_restored) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _restoreInitialPosition();
+        _restored = true;
+      });
+    }
 
     return CustomScrollView(
       controller: controller,
